@@ -368,3 +368,83 @@ describe('createSurveyV2Engine — lifecycle', () => {
     expect(client.composeSurvey).not.toHaveBeenCalled();
   });
 });
+
+// A 3-step survey whose middle step is gated on the first step's answer. Used
+// to assert the engine skips steps with no visible questions during navigation.
+const GATED_SURVEY = {
+  version: 'v2',
+  drugIds: ['drug-A'],
+  sections: [
+    {
+      sectionId: 's1', order: 0, title: 'Sex',
+      steps: [{
+        stepId: 'st1', order: 0,
+        questions: [{
+          questionId: 'sex', text: 'Sex assigned at birth?', type: 'multiple_choice', required: true,
+          options: [{ value: 'male', text: 'Male' }, { value: 'female', text: 'Female' }],
+        }],
+      }],
+    },
+    {
+      sectionId: 's2', order: 1, title: 'Reproductive Health',
+      steps: [{
+        stepId: 'st2', order: 0,
+        questions: [{
+          questionId: 'preg', text: 'Pregnant?', type: 'multi_select', required: true,
+          options: [{ value: 'none', text: 'None of these' }],
+          visibilityConditions: [{ questionId: 'sex', operator: 'equals', value: 'female' }],
+        }],
+      }],
+    },
+    {
+      sectionId: 's3', order: 2, title: 'Almost done',
+      steps: [{ stepId: 'st3', order: 0, questions: [{ questionId: 'q3', text: 'Q3?', type: 'text' }] }],
+    },
+  ],
+  mode: 'initial' as const,
+};
+
+function gatedClient() {
+  return stubClient({
+    composeSurvey: vi.fn().mockResolvedValue(GATED_SURVEY),
+    checkQualification: vi.fn().mockResolvedValue({
+      qualified: true, drugResults: [{ drugId: 'drug-A', qualified: true }],
+    }),
+  });
+}
+
+describe('createSurveyV2Engine — skips steps with no visible questions', () => {
+  it('next() jumps over a gated step that is hidden for the current answers', async () => {
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x', drugIds: ['drug-A'], client: gatedClient(), storage,
+    });
+    await tick();
+    expect(engine.getState().flatSteps).toHaveLength(3);
+    engine.setAnswer('sex', 'male'); // reproductive step (idx 1) becomes hidden
+    await engine.next();
+    expect(engine.getState().stepIndex).toBe(2); // skipped idx 1
+    expect(engine.getState().phase).toBe('questions');
+  });
+
+  it('next() stops on the gated step when its condition is met', async () => {
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x', drugIds: ['drug-A'], client: gatedClient(), storage,
+    });
+    await tick();
+    engine.setAnswer('sex', 'female'); // reproductive step stays visible
+    await engine.next();
+    expect(engine.getState().stepIndex).toBe(1);
+  });
+
+  it('back() also jumps over the hidden step', async () => {
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x', drugIds: ['drug-A'], client: gatedClient(), storage,
+    });
+    await tick();
+    engine.setAnswer('sex', 'male');
+    await engine.next();
+    expect(engine.getState().stepIndex).toBe(2);
+    engine.back();
+    expect(engine.getState().stepIndex).toBe(0); // skipped idx 1 going back
+  });
+});
