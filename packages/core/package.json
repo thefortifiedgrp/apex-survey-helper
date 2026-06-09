@@ -1,6 +1,6 @@
 {
   "name": "@apextelemed/survey-core",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Framework-agnostic state machine and API client for the Apex Telemed survey-v2 embed flow.",
   "license": "MIT",
   "type": "module",
