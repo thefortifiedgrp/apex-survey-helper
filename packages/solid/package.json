@@ -1,6 +1,6 @@
 {
   "name": "@apextelemed/survey-solid",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Solid hook for the Apex Telemed survey-v2 embed flow.",
   "license": "MIT",
   "type": "module",
