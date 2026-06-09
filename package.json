@@ -8,6 +8,24 @@
     "packages/*",
     "examples/*"
   ],
+  "//consume": "Root entry points let the monorepo be consumed directly from source over a `github:` install (no build/registry needed), mirroring @thefortifiedgrp/apex-partner-core. The default export is the Solid adapter; `./core` exposes the headless core. `solid-js` is a peer, supplied by the host app. Consumers that resolve the Solid adapter's internal `@apextelemed/survey-core` import should alias it to `apex-survey-helper/core` until the packages are published to npm.",
+  "main": "./packages/solid/src/index.ts",
+  "module": "./packages/solid/src/index.ts",
+  "types": "./packages/solid/src/index.ts",
+  "exports": {
+    ".": "./packages/solid/src/index.ts",
+    "./solid": "./packages/solid/src/index.ts",
+    "./react": "./packages/react/src/index.ts",
+    "./core": "./packages/core/src/index.ts"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "solid-js": {
+      "optional": true
+    }
+  },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "test": "vitest run",
