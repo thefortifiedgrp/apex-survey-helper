@@ -24,9 +24,25 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      # Gate the release step on an npm token being configured. Without it,
+      # `changeset publish` fails with ENEEDAUTH; skipping keeps main green until
+      # the NPM_TOKEN secret is added (at which point releases resume automatically).
+      - name: Check for npm token
+        id: npm_token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::NPM_TOKEN not set — skipping changesets version/publish step."
+          fi
+
       # Opens/updates a "Version Packages" PR when changesets are present;
       # when that PR is merged, publishes the three packages to npm.
       - name: Create release PR or publish
+        if: steps.npm_token.outputs.present == 'true'
         uses: changesets/action@v1
         with:
           version: npm run version-packages
