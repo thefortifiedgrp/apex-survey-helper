@@ -210,6 +210,47 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
     return false;
   }
 
+  // A step is "empty" when every one of its questions is hidden by the current
+  // answers (e.g. a gender-gated section the patient doesn't match). The engine
+  // skips such steps during navigation so the UI never renders a blank page.
+  function stepHasVisibleQuestions(step: FlatStep, answers: Record<string, unknown>): boolean {
+    return step.questions.some((q) => isQuestionVisible(q, answers));
+  }
+
+  // Nearest navigable step strictly after `from` with at least one visible
+  // question; -1 when the rest of the survey is empty (→ patient info).
+  function nextVisibleStepIndex(from: number): number {
+    for (let i = from + 1; i < state.flatSteps.length; i++) {
+      if (stepHasVisibleQuestions(state.flatSteps[i], state.answers)) return i;
+    }
+    return -1;
+  }
+
+  // Nearest navigable step strictly before `from` with at least one visible
+  // question; -1 when there is none (already at the first real step).
+  function prevVisibleStepIndex(from: number): number {
+    for (let i = from - 1; i >= 0; i--) {
+      if (stepHasVisibleQuestions(state.flatSteps[i], state.answers)) return i;
+    }
+    return -1;
+  }
+
+  // First step at or after `from` (then wrapping from 0) with visible questions,
+  // used to land a restored draft on a real step. Falls back to `from`.
+  function firstVisibleStepIndex(
+    flatSteps: FlatStep[],
+    answers: Record<string, unknown>,
+    from: number,
+  ): number {
+    for (let i = Math.max(0, from); i < flatSteps.length; i++) {
+      if (stepHasVisibleQuestions(flatSteps[i], answers)) return i;
+    }
+    for (let i = 0; i < flatSteps.length; i++) {
+      if (stepHasVisibleQuestions(flatSteps[i], answers)) return i;
+    }
+    return from;
+  }
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
   async function load() {
     try {
@@ -241,6 +282,8 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         for (const a of draft.answers) answers[a.questionId] = a.value;
         stepIndex = Math.min(draft.stepIndex, Math.max(0, flatSteps.length - 1));
       }
+      // Never land on a step whose questions are all hidden for these answers.
+      stepIndex = firstVisibleStepIndex(flatSteps, answers, stepIndex);
 
       setState({
         phase: 'questions',
@@ -283,10 +326,10 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
       setState({ phase: 'questions' });
       return;
     }
-    if (state.stepIndex > 0) {
-      const next = state.stepIndex - 1;
-      setState({ stepIndex: next });
-      persistDraft(next);
+    const prev = prevVisibleStepIndex(state.stepIndex);
+    if (prev !== -1) {
+      setState({ stepIndex: prev });
+      persistDraft(prev);
     }
   }
 
@@ -319,11 +362,11 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         emit({ type: 'disqualified', data: { drugResults: result.drugResults } });
         return;
       }
-      const isLast = state.stepIndex >= state.flatSteps.length - 1;
-      if (isLast) {
+      const nextIdx = nextVisibleStepIndex(state.stepIndex);
+      if (nextIdx === -1) {
+        // No further step has visible questions → collect patient info.
         setState({ phase: 'patient_info', qualification: result, busy: false });
       } else {
-        const nextIdx = state.stepIndex + 1;
         setState({ stepIndex: nextIdx, qualification: result, busy: false });
         persistDraft(nextIdx);
       }
