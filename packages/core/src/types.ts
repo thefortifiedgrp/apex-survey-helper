@@ -8,6 +8,9 @@ export interface V2QuestionOption {
   optionId?: string;
   text?: string;
   value: string;
+  /** Optional grouping key (e.g. a condition's body-system category). Renderers
+   *  may cluster options under subheadings by this; those that don't ignore it. */
+  group?: string;
 }
 
 export interface V2Question {
