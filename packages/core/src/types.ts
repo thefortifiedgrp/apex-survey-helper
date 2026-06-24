@@ -64,7 +64,14 @@ export interface V2DrugResult {
   drugId: string;
   drugName?: string;
   qualified: boolean;
+  /** Legacy singular reason. The backend now sends `disqualificationReasons`
+   *  (plural); prefer {@link disqualificationReasonText} which reads both. */
   disqualificationReason?: string;
+  /** Per-drug disqualification reasons as sent on the wire (may be empty
+   *  strings). Present alongside the legacy singular field. */
+  disqualificationReasons?: string[];
+  /** Non-blocking clinical flags surfaced to the prescriber. */
+  flags?: unknown[];
   isRecommended?: boolean;
   recommendationReasons?: string[];
 }
