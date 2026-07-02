@@ -448,3 +448,88 @@ describe('createSurveyV2Engine — skips steps with no visible questions', () =>
     expect(engine.getState().stepIndex).toBe(0); // skipped idx 1 going back
   });
 });
+
+describe('createSurveyV2Engine — skip patient-info when identity complete', () => {
+  const QUALIFIED = { qualified: true, drugResults: [{ drugId: 'drug-A', qualified: true }] };
+  const FULL_ID = { firstName: 'Ana', lastName: 'Lee', email: 'a@t.com', dob: '1990-01-01', state: 'CA' };
+
+  function build(overrides: any = {}, opts: any = {}) {
+    const client = stubClient({
+      composeSurvey: vi.fn().mockResolvedValue(overrides.composed ?? TINY_SURVEY),
+      checkQualification: vi.fn().mockResolvedValue(QUALIFIED),
+      submitSurvey: overrides.submitSurvey ?? vi.fn().mockResolvedValue({ responseId: 'resp-1', ...QUALIFIED }),
+    });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x', drugIds: ['drug-A'], client, storage, ...opts,
+    });
+    return { engine, client };
+  }
+
+  async function driveToEnd(engine: any) {
+    engine.setAnswer('q1', 'x'); // q1 is required
+    await engine.next(); // step 0 → step 1
+    await engine.next(); // step 1 → patient_info OR auto-submit
+  }
+
+  it('(a) flag OFF → lands on patient_info form, never auto-submits (regression anchor)', async () => {
+    // Complete identity but no opt-in: must behave byte-identically to today.
+    const { engine, client } = build({}, { knownPatientInfo: FULL_ID });
+    await tick();
+    await driveToEnd(engine);
+    expect(engine.getState().phase).toBe('patient_info');
+    expect(client.submitSurvey).not.toHaveBeenCalled();
+  });
+
+  it('(b) flag ON + complete identity → auto-submits to complete', async () => {
+    const onComplete = vi.fn();
+    const { engine, client } = build({}, { skipPatientInfoWhenComplete: true, knownPatientInfo: FULL_ID, onComplete });
+    await tick();
+    await driveToEnd(engine);
+    expect(client.submitSurvey).toHaveBeenCalledTimes(1);
+    expect(engine.getState().phase).toBe('complete');
+    expect(engine.getState().result?.responseId).toBe('resp-1');
+    expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ responseId: 'resp-1' }));
+  });
+
+  it('(c) flag ON + INCOMPLETE identity → renders patient_info (guard blocks)', async () => {
+    const { engine, client } = build({}, { skipPatientInfoWhenComplete: true, knownPatientInfo: { firstName: 'Ana' } });
+    await tick();
+    await driveToEnd(engine);
+    expect(engine.getState().phase).toBe('patient_info');
+    expect(client.submitSurvey).not.toHaveBeenCalled();
+  });
+
+  it('(d) flag ON + complete + submit fails → falls back to patient_info form', async () => {
+    const { engine, client } = build(
+      { submitSurvey: vi.fn().mockRejectedValue(new Error('net')) },
+      { skipPatientInfoWhenComplete: true, knownPatientInfo: FULL_ID },
+    );
+    await tick();
+    await driveToEnd(engine);
+    expect(client.submitSurvey).toHaveBeenCalledTimes(1);
+    expect(engine.getState().phase).toBe('patient_info');
+    expect(engine.getState().error).toBeNull();
+    expect(engine.getState().validationError).toMatch(/try again/i);
+  });
+
+  it('(e) partner veto (surveyPreferences.skipPatientInfoWhenComplete=false) → does NOT skip', async () => {
+    const vetoed = { ...TINY_SURVEY, surveyPreferences: { skipPatientInfoWhenComplete: false } };
+    const { engine, client } = build({ composed: vetoed }, { skipPatientInfoWhenComplete: true, knownPatientInfo: FULL_ID });
+    await tick();
+    await driveToEnd(engine);
+    expect(engine.getState().phase).toBe('patient_info');
+    expect(client.submitSurvey).not.toHaveBeenCalled();
+  });
+
+  it('(f) host-widened requiredPatientInfoFields unmet (missing address) → guard blocks skip', async () => {
+    const { engine, client } = build({}, {
+      skipPatientInfoWhenComplete: true,
+      knownPatientInfo: FULL_ID, // the 5 but no street1
+      requiredPatientInfoFields: ['firstName', 'lastName', 'email', 'dob', 'state', 'street1'],
+    });
+    await tick();
+    await driveToEnd(engine);
+    expect(engine.getState().phase).toBe('patient_info');
+    expect(client.submitSurvey).not.toHaveBeenCalled();
+  });
+});

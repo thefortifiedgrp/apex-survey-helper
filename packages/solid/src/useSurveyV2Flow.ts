@@ -47,6 +47,19 @@ export interface UseSurveyV2FlowOptions {
   /** Returning-member token (overrides drugIds/templateId/mode). */
   token?: string;
 
+  /** Opt-in: auto-submit at the end of the questionnaire (skipping the
+   *  patient-info form) when a returning/known customer's identity is already
+   *  complete. Default OFF. Pass with `knownPatientInfo`. See engine docs. */
+  skipPatientInfoWhenComplete?: boolean;
+  /** Known identity for a returning customer on the drugIds path — seeds the
+   *  engine so the skip guard can pass. Resolve it BEFORE calling this hook
+   *  (the engine is built once from the options passed at that time). */
+  knownPatientInfo?: Partial<PatientInfo>;
+  /** Widen the fields required for the skip to fire (default: the engine's
+   *  firstName/lastName/email/dob/state). Add any your downstream needs (e.g.
+   *  shipping address) so the skip never drops them. */
+  requiredPatientInfoFields?: Array<keyof PatientInfo>;
+
   /** Override the draft storage TTL (default 24h). */
   draftTtlMs?: number;
   /** Lifecycle events from the engine. */
@@ -111,6 +124,9 @@ export function useSurveyV2Flow(opts: UseSurveyV2FlowOptions): SurveyV2Flow {
     templateId: opts.templateId,
     mode: opts.mode,
     token: opts.token,
+    skipPatientInfoWhenComplete: opts.skipPatientInfoWhenComplete,
+    knownPatientInfo: opts.knownPatientInfo,
+    requiredPatientInfoFields: opts.requiredPatientInfoFields,
     draftTtlMs: opts.draftTtlMs,
     onEvent: opts.onEvent,
     onComplete: opts.onComplete,
