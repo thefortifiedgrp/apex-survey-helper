@@ -80,6 +80,38 @@ export interface CreateSurveyV2EngineOptions {
   // Returning-member flow (overrides drugIds/templateId/mode):
   token?: string;
 
+  // ── Returning/known-customer patient-info skip (opt-in, default OFF) ────────
+  /**
+   * Opt-in. When true AND the composed survey's partner has not vetoed it
+   * (`surveyPreferences.skipPatientInfoWhenComplete !== false`) AND the required
+   * identity fields are already present, the engine AUTO-SUBMITS at the end of
+   * the questionnaire instead of rendering the patient-info form — so a returning
+   * customer whose identity is already known confirms nothing.
+   *
+   * Default OFF three ways: this defaults false; the partner flag can veto it
+   * centrally; and the runtime completeness guard blocks it unless identity is
+   * fully present — so an anonymous/new customer (whose patientInfo is `{}`) can
+   * never skip. A host must only pass true once it has supplied a complete
+   * `knownPatientInfo` covering `requiredPatientInfoFields`.
+   */
+  skipPatientInfoWhenComplete?: boolean;
+  /**
+   * Known identity for a returning/authenticated customer on the anonymous
+   * `drugIds` path (the `token` path already seeds identity server-side). Seeds
+   * the engine's patient info so the skip guard can pass. The host should NOT
+   * include fields its survey collects as its own questions (those are set from
+   * the answers). Ignored fields the survey later overwrites via setPatientInfo.
+   */
+  knownPatientInfo?: Partial<PatientInfo>;
+  /**
+   * The identity fields that must ALL be present for the skip to fire. Defaults
+   * to the engine's minimum (firstName/lastName/email/dob/state). A host whose
+   * downstream (e.g. request creation) needs more — like a shipping address —
+   * MUST widen this to its real superset, so the skip never drops a field the
+   * form would otherwise force. This is the completeness floor, not the ceiling.
+   */
+  requiredPatientInfoFields?: Array<keyof PatientInfo>;
+
   // Hooks:
   onEvent?: (e: EmbedEvent) => void;
   onComplete?: (result: V2SubmitResult) => void;
@@ -164,6 +196,16 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         console.error('[survey-core] listener threw:', err);
       }
     }
+  }
+
+  // Completeness floor for the returning-customer skip. Defaults to the engine's
+  // minimum; a host widens it (e.g. + shipping address) so the skip never drops
+  // a field its downstream needs.
+  const requiredPatientInfoFields = opts.requiredPatientInfoFields ?? REQUIRED_PATIENT_INFO_FIELDS;
+  function patientInfoComplete(pi: PatientInfo): boolean {
+    if (!requiredPatientInfoFields.every((k) => pi[k])) return false;
+    if (pi.email && !/^\S+@\S+\.\S+$/.test(pi.email)) return false;
+    return true;
   }
 
   function emit(event: EmbedEvent) {
@@ -255,13 +297,15 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
   async function load() {
     try {
       let composed: V2ComposedSurvey;
-      let patientInfo: PatientInfo = {};
+      // Seed a returning customer's known identity (anonymous drugIds path); the
+      // token path's server-supplied patientInfo still takes precedence below.
+      let patientInfo: PatientInfo = { ...opts.knownPatientInfo };
       let memberId: string | null = null;
 
       if (opts.token) {
         const r = await client.composeSurveyByToken(opts.token);
         composed = r.composed;
-        patientInfo = r.patientInfo ?? {};
+        patientInfo = { ...opts.knownPatientInfo, ...(r.patientInfo ?? {}) };
         memberId = r.memberId;
       } else {
         composed = await client.composeSurvey({
@@ -364,8 +408,31 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
       }
       const nextIdx = nextVisibleStepIndex(state.stepIndex);
       if (nextIdx === -1) {
-        // No further step has visible questions → collect patient info.
+        // No further step has visible questions. Normally we render the
+        // patient-info form. But a returning/known customer with complete
+        // identity skips straight to submit — gated on ALL of: the host opted in
+        // (skipPatientInfoWhenComplete), the partner has not centrally vetoed it,
+        // and the completeness guard passes. Set phase:'patient_info' first so
+        // submit()'s own guard is satisfied (we do NOT relax that guard).
         setState({ phase: 'patient_info', qualification: result, busy: false });
+        const partnerVetoed =
+          (state.composed?.surveyPreferences as { skipPatientInfoWhenComplete?: boolean } | undefined)
+            ?.skipPatientInfoWhenComplete === false;
+        if (opts.skipPatientInfoWhenComplete && !partnerVetoed && patientInfoComplete(state.patientInfo)) {
+          await submit();
+          // submit() sets phase:'error' on failure WITHOUT rethrowing, so a
+          // try/catch here would never fire — check the phase instead and fall
+          // back to the rendered form rather than stranding the member on a dead
+          // error screen with no way to retry. (Cast: TS narrowed `phase` to
+          // 'questions' from the guard atop next() and can't see submit() mutate it.)
+          if ((state.phase as string) === 'error') {
+            setState({
+              phase: 'patient_info',
+              error: null,
+              validationError: 'We couldn’t submit automatically. Please review your details and try again.',
+            });
+          }
+        }
       } else {
         setState({ stepIndex: nextIdx, qualification: result, busy: false });
         persistDraft(nextIdx);
