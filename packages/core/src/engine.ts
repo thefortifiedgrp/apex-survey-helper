@@ -221,6 +221,36 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
     return Object.entries(state.answers).map(([questionId, value]) => ({ questionId, value }));
   }
 
+  // The submit payload must record an answer for every question that was
+  // SHOWN, even when the patient left it blank — not checking a box is a real
+  // answer ("none of these apply"), not a missing one. Without this, a
+  // rendered-but-unselected optional multi_select (e.g. the contraindication
+  // screen `merged_conditions`) is omitted entirely, making "reported none"
+  // indistinguishable from "never screened" downstream (case notes, AI assist).
+  //
+  // Preserves every touched answer verbatim (never drops one) and only ADDS a
+  // canonical empty for a shown-but-untouched question. Scoped to multi_select
+  // (empty = []); scalar types are intentionally NOT filled here — injecting
+  // `null` for a scalar is not visibility-safe (the visibility evaluator treats
+  // null unlike undefined, and Number(null) === 0 flips numeric gates). Hidden
+  // questions (visibilityConditions fail against the final answers) are never
+  // fabricated, so e.g. the female-only reproductive screen stays absent for
+  // male patients.
+  function visibleSubmissionAnswers(): V2Answer[] {
+    const out = answersArr();
+    const present = new Set(out.map((a) => a.questionId));
+    for (const step of state.flatSteps) {
+      for (const q of step.questions) {
+        if (present.has(q.questionId)) continue;
+        if (q.type !== 'multi_select') continue;
+        if (!isQuestionVisible(q, state.answers)) continue;
+        out.push({ questionId: q.questionId, value: [] });
+        present.add(q.questionId);
+      }
+    }
+    return out;
+  }
+
   function persistDraft(overrideStepIndex?: number) {
     saveDraft(
       dKey,
@@ -463,7 +493,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         templateId: opts.templateId,
         mode: opts.mode,
         token: opts.token,
-        answers: answersArr(),
+        answers: visibleSubmissionAnswers(),
         patientInfo: pi,
       });
       if (destroyed) return;
