@@ -309,6 +309,90 @@ describe('createSurveyV2Engine — submit', () => {
   });
 });
 
+describe('createSurveyV2Engine — submit answer completeness', () => {
+  // st2 has a shown optional multi_select (mc) and a reproductive multi_select
+  // (repro) gated on sex=='f' — with sex unanswered, repro is hidden.
+  const COMPLETENESS_SURVEY = {
+    version: 'v2',
+    drugIds: ['drug-A'],
+    sections: [
+      {
+        sectionId: 's1', order: 0, title: 'S1',
+        steps: [{ stepId: 'st1', order: 0, questions: [{ questionId: 'q1', text: 'Q?', type: 'text', required: true }] }],
+      },
+      {
+        sectionId: 's2', order: 1, title: 'S2',
+        steps: [{
+          stepId: 'st2', order: 0, questions: [
+            { questionId: 'mc', text: 'Conditions?', type: 'multi_select' },
+            {
+              questionId: 'repro', text: 'Reproductive?', type: 'multi_select',
+              visibilityConditions: [{ questionId: 'sex', operator: 'equals', value: 'f' }],
+            },
+          ],
+        }],
+      },
+    ],
+    mode: 'initial' as const,
+  };
+
+  function completenessClient(submitSurvey: EmbedApiClient['submitSurvey']) {
+    return stubClient({
+      composeSurvey: vi.fn().mockResolvedValue(COMPLETENESS_SURVEY),
+      checkQualification: vi.fn().mockResolvedValue({
+        qualified: true, drugResults: [{ drugId: 'drug-A', qualified: true }],
+      }),
+      submitSurvey,
+    });
+  }
+
+  const PATIENT = { firstName: 'F', lastName: 'L', email: 'a@b.com', dob: '1990-01-01', state: 'CA' };
+
+  it('records a shown-but-unselected multi_select as [] and omits a hidden one', async () => {
+    const submitSurvey = vi.fn().mockResolvedValue({
+      responseId: 'r1', qualified: true, drugResults: [{ drugId: 'drug-A', qualified: true }],
+    });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x', drugIds: ['drug-A'],
+      client: completenessClient(submitSurvey), storage,
+    });
+    await tick();
+    engine.setAnswer('q1', 'a');
+    await engine.next(); // st1 -> st2
+    await engine.next(); // st2 -> patient_info (mc + repro left blank)
+    engine.setPatientInfo(PATIENT);
+    await engine.submit();
+
+    const sent = (submitSurvey.mock.calls[0][0] as any).answers;
+    // "no conditions" is a real answer, recorded explicitly.
+    expect(sent).toEqual(expect.arrayContaining([{ questionId: 'mc', value: [] }]));
+    // touched answers preserved verbatim.
+    expect(sent).toEqual(expect.arrayContaining([{ questionId: 'q1', value: 'a' }]));
+    // a visibility-hidden question is never fabricated.
+    expect(sent.find((a: any) => a.questionId === 'repro')).toBeUndefined();
+  });
+
+  it('leaves a real multi_select selection unchanged', async () => {
+    const submitSurvey = vi.fn().mockResolvedValue({
+      responseId: 'r2', qualified: true, drugResults: [{ drugId: 'drug-A', qualified: true }],
+    });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x', drugIds: ['drug-A'],
+      client: completenessClient(submitSurvey), storage,
+    });
+    await tick();
+    engine.setAnswer('q1', 'a');
+    await engine.next();
+    engine.setAnswer('mc', ['type_2_diabetes']);
+    await engine.next();
+    engine.setPatientInfo(PATIENT);
+    await engine.submit();
+
+    const sent = (submitSurvey.mock.calls[0][0] as any).answers;
+    expect(sent).toEqual(expect.arrayContaining([{ questionId: 'mc', value: ['type_2_diabetes'] }]));
+  });
+});
+
 describe('createSurveyV2Engine — lifecycle', () => {
   it('restart() resets state + clears draft', async () => {
     const client = stubClient({
