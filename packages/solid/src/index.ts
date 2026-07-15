@@ -5,6 +5,14 @@ export {
   type SurveyV2Outcome,
 } from './useSurveyV2Flow';
 
+// Eligibility gating helpers (re-exported from core so a Solid integration can
+// depend on just `@apextelemed/survey-solid`).
+export {
+  qualifiedDrugIds,
+  disqualifiedDrugIds,
+  disqualificationReasonText,
+} from '@apextelemed/survey-core';
+
 // Re-export the core types consumers most commonly need when rendering, so a
 // Solid integration can depend on just `@apextelemed/survey-solid` for types.
 export type {
