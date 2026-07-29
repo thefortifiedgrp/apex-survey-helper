@@ -204,6 +204,34 @@ describe('createSurveyV2Engine — navigation', () => {
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'disqualified' }));
   });
 
+  it('drops the draft on disqualification so a return visit starts fresh', async () => {
+    const client = stubClient({
+      composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY),
+      checkQualification: vi.fn().mockResolvedValue({
+        qualified: false,
+        drugResults: [{ drugId: 'drug-A', qualified: false, disqualificationReason: 'Under 18' }],
+      }),
+    });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client, storage,
+    });
+    await tick();
+    engine.setAnswer('q1', 'ans');
+    const draftKeys = () =>
+      [...new Array(storage.length)]
+        .map((_, i) => storage.key(i))
+        .filter((k): k is string => !!k && k.includes('apex:draft'));
+    // The answer was persisted, so its absence below is the clear, not a
+    // draft that was never written.
+    expect(draftKeys()).toHaveLength(1);
+
+    await engine.next();
+
+    expect(engine.getState().phase).toBe('disqualified');
+    expect(draftKeys()).toHaveLength(0);
+  });
+
   it('next() on the last step transitions to patient_info phase', async () => {
     const client = stubClient({
       composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY),

@@ -427,6 +427,11 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
       const allDisqualified =
         result.drugResults.length > 0 && result.drugResults.every((d) => !d.qualified);
       if (allDisqualified) {
+        // Terminal, so the draft goes — same as a successful submit below.
+        // Keeping it means a member who leaves and comes back resumes on the
+        // denying answers and is denied again the moment they hit Continue,
+        // with no way out but "Start over". They should get a fresh survey.
+        clearDraft(dKey, storageOpts);
         setState({
           phase: 'disqualified',
           qualification: result,
