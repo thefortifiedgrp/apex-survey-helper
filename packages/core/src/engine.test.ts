@@ -421,6 +421,120 @@ describe('createSurveyV2Engine — submit answer completeness', () => {
   });
 });
 
+describe('createSurveyV2Engine — funnel events', () => {
+  function qualifiedClient() {
+    return stubClient({
+      composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY),
+      checkQualification: vi.fn().mockResolvedValue({
+        qualified: true,
+        drugResults: [{ drugId: 'drug-A', qualified: true }],
+      }),
+    });
+  }
+
+  it('emits step:shown for the initial step, on advance, and on back', async () => {
+    const onEvent = vi.fn();
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client: qualifiedClient(), storage, onEvent,
+    });
+    await tick();
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'step:shown',
+      data: { stepIndex: 0, stepCount: 2, phase: 'questions' },
+    });
+
+    engine.setAnswer('q1', 'a');
+    await engine.next();
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'step:completed',
+      data: { stepIndex: 0, stepCount: 2 },
+    });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'step:shown',
+      data: { stepIndex: 1, stepCount: 2, phase: 'questions' },
+    });
+
+    onEvent.mockClear();
+    engine.back();
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'step:shown',
+      data: { stepIndex: 0, stepCount: 2, phase: 'questions' },
+    });
+  });
+
+  it('emits qualification:checked on next() and patient_info as the pseudo-step', async () => {
+    const onEvent = vi.fn();
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client: qualifiedClient(), storage, onEvent,
+    });
+    await tick();
+    engine.setAnswer('q1', 'a');
+    await engine.next();
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'qualification:checked',
+      data: expect.objectContaining({ qualified: true }),
+    });
+
+    await engine.next(); // last question step → patient_info
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'step:shown',
+      data: { stepIndex: 2, stepCount: 2, phase: 'patient_info' },
+    });
+  });
+
+  it('emits abandoned on pagehide while in progress, but not after destroy or completion', async () => {
+    const onEvent = vi.fn();
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client: qualifiedClient(), storage, onEvent,
+    });
+    await tick();
+
+    window.dispatchEvent(new Event('pagehide'));
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'abandoned',
+      data: { phase: 'questions', stepIndex: 0, stepCount: 2 },
+    });
+
+    onEvent.mockClear();
+    engine.destroy();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not emit abandoned once the survey is complete', async () => {
+    const onEvent = vi.fn();
+    const submitSurvey = vi.fn().mockResolvedValue({ responseId: 'r1', qualified: true, drugResults: [] });
+    const client = stubClient({
+      composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY),
+      checkQualification: vi.fn().mockResolvedValue({
+        qualified: true,
+        drugResults: [{ drugId: 'drug-A', qualified: true }],
+      }),
+      submitSurvey,
+    });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client, storage, onEvent,
+    });
+    await tick();
+    engine.setAnswer('q1', 'a');
+    await engine.next();
+    await engine.next();
+    engine.setPatientInfo({
+      firstName: 'P', lastName: 'D', email: 'p@d.com', dob: '1990-01-01', state: 'TX',
+    });
+    await engine.submit();
+    expect(engine.getState().phase).toBe('complete');
+
+    onEvent.mockClear();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+});
+
 describe('createSurveyV2Engine — lifecycle', () => {
   it('restart() resets state + clears draft', async () => {
     const client = stubClient({
