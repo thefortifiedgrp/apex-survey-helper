@@ -121,8 +121,12 @@ export interface FlatStep {
   questions: V2Question[];
 }
 
-// Lifecycle events emitted by the engine. Only a subset is emitted today; the
-// rest are reserved so consumer code subscribing broadly doesn't break later.
+// Lifecycle events emitted by the engine.
+// step:shown/step:completed carry { stepIndex, stepCount, phase? } (the
+// patient-info form is the pseudo-step at stepIndex === stepCount);
+// abandoned fires on pagehide while the survey is in progress and carries
+// { phase, stepIndex, stepCount }. Hosts forwarding telemetry should use
+// fetch keepalive so abandoned events survive the unload.
 export type EmbedEventType =
   | 'survey:loaded'
   | 'submit:succeeded'
