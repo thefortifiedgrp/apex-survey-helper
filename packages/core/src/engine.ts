@@ -1,6 +1,6 @@
 import { createEmbedApiClient, EmbedApiError, type EmbedApiClient, type FetchLike } from './api';
 import { flattenComposedSurvey } from './flatten';
-import { clearDraft, draftKey, loadDraft, saveDraft } from './storage';
+import { createLocalDraftStore, draftKey, type DraftStore } from './storage';
 import { isQuestionVisible } from './visibility';
 import type {
   EmbedEvent,
@@ -122,6 +122,15 @@ export interface CreateSurveyV2EngineOptions {
   fetch?: FetchLike;
   storage?: Storage | null;
   draftTtlMs?: number;
+  /**
+   * Where in-progress answers are kept. Defaults to a localStorage store
+   * (device-local resume-on-refresh). Supply one backed by a server to let a
+   * patient resume on a different device — see `DraftStore`.
+   *
+   * Takes precedence over `storage`/`draftTtlMs`, which only configure the
+   * default store.
+   */
+  draftStore?: DraftStore;
 
   /**
    * If true (default), the engine kicks off `load()` immediately when created.
@@ -164,6 +173,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
   });
 
   const storageOpts = { storage: opts.storage, ttlMs: opts.draftTtlMs };
+  const draftStore: DraftStore = opts.draftStore ?? createLocalDraftStore(dKey, storageOpts);
 
   let state: SurveyV2State = {
     phase: 'loading',
@@ -269,11 +279,10 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
   }
 
   function persistDraft(overrideStepIndex?: number) {
-    saveDraft(
-      dKey,
-      { answers: answersArr(), stepIndex: overrideStepIndex ?? state.stepIndex },
-      storageOpts,
-    );
+    draftStore.save({
+      answers: answersArr(),
+      stepIndex: overrideStepIndex ?? state.stepIndex,
+    });
   }
 
   function currentStep(): FlatStep | null {
@@ -366,7 +375,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
       const flatSteps = flattenComposedSurvey(composed);
 
       // Restore draft if present.
-      const draft = loadDraft(dKey, storageOpts);
+      const draft = await draftStore.load();
       let answers: Record<string, unknown> = {};
       let stepIndex = 0;
       if (draft) {
@@ -460,7 +469,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         // Keeping it means a member who leaves and comes back resumes on the
         // denying answers and is denied again the moment they hit Continue,
         // with no way out but "Start over". They should get a fresh survey.
-        clearDraft(dKey, storageOpts);
+        draftStore.clear();
         setState({
           phase: 'disqualified',
           qualification: result,
@@ -537,7 +546,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         patientInfo: pi,
       });
       if (destroyed) return;
-      clearDraft(dKey, storageOpts);
+      draftStore.clear();
       setState({ phase: 'complete', result });
       emit({ type: 'submit:succeeded', data: { responseId: result.responseId } });
       if (opts.onComplete) {
@@ -562,7 +571,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
   }
 
   function restart() {
-    clearDraft(dKey, storageOpts);
+    draftStore.clear();
     setState({
       phase: 'questions',
       stepIndex: 0,

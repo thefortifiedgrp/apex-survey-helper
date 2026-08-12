@@ -12,6 +12,7 @@ import {
   type V2DrugResult,
   type V2Question,
   type V2SubmitResult,
+  type DraftStore,
 } from '@apextelemed/survey-core';
 
 // ── Public surface ──────────────────────────────────────────────────────────
@@ -62,6 +63,11 @@ export interface UseSurveyV2FlowOptions {
 
   /** Override the draft storage TTL (default 24h). */
   draftTtlMs?: number;
+  /**
+   * Where in-progress answers are kept. Defaults to device-local
+   * localStorage; supply a server-backed store for resume-on-any-device.
+   */
+  draftStore?: DraftStore;
   /** Lifecycle events from the engine. */
   onEvent?: (e: EmbedEvent) => void;
   /** Called once on a successful submission. */
@@ -128,6 +134,7 @@ export function useSurveyV2Flow(opts: UseSurveyV2FlowOptions): SurveyV2Flow {
     knownPatientInfo: opts.knownPatientInfo,
     requiredPatientInfoFields: opts.requiredPatientInfoFields,
     draftTtlMs: opts.draftTtlMs,
+    draftStore: opts.draftStore,
     onEvent: opts.onEvent,
     onComplete: opts.onComplete,
     onError: opts.onError,

@@ -115,3 +115,36 @@ export function clearDraft(key: string, opts: StorageOptions = {}): void {
     /* ignore */
   }
 }
+
+// ── Pluggable draft store ───────────────────────────────────────────────────
+
+/**
+ * Where a survey's in-progress answers live.
+ *
+ * `load` is async because a store can be remote: the default is this file's
+ * localStorage implementation (device-local, resume-on-refresh), but a host
+ * that wants resume-on-ANY-device backs it with a server. `save`/`clear` are
+ * fire-and-forget — they are called from synchronous UI paths, and a draft is
+ * best-effort by nature: losing one costs a retype, never correctness.
+ *
+ * Implementations must never throw. The engine treats a store as a convenience
+ * and does not guard its calls.
+ */
+export interface DraftStore {
+  load(): Promise<Draft | null>;
+  save(draft: Omit<Draft, 'savedAt'>): void;
+  clear(): void;
+}
+
+/**
+ * The default store: `localStorage`, keyed by the survey identity, with the
+ * same TTL semantics the engine has always had. Behaviour is unchanged from
+ * when these functions were called directly.
+ */
+export function createLocalDraftStore(key: string, opts: StorageOptions = {}): DraftStore {
+  return {
+    load: async () => loadDraft(key, opts),
+    save: (draft) => saveDraft(key, draft, opts),
+    clear: () => clearDraft(key, opts),
+  };
+}

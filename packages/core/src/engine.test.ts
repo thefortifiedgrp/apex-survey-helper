@@ -759,3 +759,64 @@ describe('createSurveyV2Engine — skip patient-info when identity complete', ()
     expect(client.submitSurvey).not.toHaveBeenCalled();
   });
 });
+
+describe('createSurveyV2Engine — pluggable draft store', () => {
+  it('loads from an injected store and writes answers/steps back to it', async () => {
+    const saved: Array<{ answers: unknown[]; stepIndex: number }> = [];
+    const store = {
+      load: vi.fn(async () => ({ answers: [{ questionId: 'q1', value: 'restored' }], stepIndex: 1, savedAt: Date.now() })),
+      save: vi.fn((d: any) => { saved.push(d); }),
+      clear: vi.fn(),
+    };
+    const client = stubClient({ composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY) });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client, storage, draftStore: store,
+    });
+    await tick();
+
+    // Restored from the remote store, not localStorage.
+    expect(store.load).toHaveBeenCalled();
+    expect(engine.getState().answers.q1).toBe('restored');
+    expect(engine.getState().stepIndex).toBe(1);
+
+    engine.setAnswer('q1', 'edited');
+    expect(store.save).toHaveBeenCalled();
+    expect(saved[saved.length - 1].answers).toEqual([{ questionId: 'q1', value: 'edited' }]);
+  });
+
+  it('clears the injected store on a terminal outcome', async () => {
+    const store = { load: vi.fn(async () => null), save: vi.fn(), clear: vi.fn() };
+    const client = stubClient({
+      composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY),
+      checkQualification: vi.fn().mockResolvedValue({
+        qualified: false,
+        drugResults: [{ drugId: 'drug-A', qualified: false }],
+      }),
+    });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client, storage, draftStore: store,
+    });
+    await tick();
+    engine.setAnswer('q1', 'ans');
+    await engine.next();
+
+    expect(engine.getState().phase).toBe('disqualified');
+    expect(store.clear).toHaveBeenCalled();
+  });
+
+  it('defaults to localStorage when no store is injected (unchanged behaviour)', async () => {
+    const client = stubClient({ composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY) });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client, storage,
+    });
+    await tick();
+    engine.setAnswer('q1', 'persisted');
+    const keys = Array.from({ length: storage.length }, (_, i) => storage.key(i)!);
+    const draftKeyName = keys.find((k) => k.startsWith('apex:draft:v1'));
+    expect(draftKeyName).toBeTruthy();
+    expect(storage.getItem(draftKeyName!)).toContain('persisted');
+  });
+});
