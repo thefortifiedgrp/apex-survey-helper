@@ -13,7 +13,9 @@ export {
   saveDraft,
   clearDraft,
   type Draft,
+  type DraftStore,
   type StorageOptions,
+  createLocalDraftStore,
 } from './storage';
 export {
   createSurveyV2Engine,
