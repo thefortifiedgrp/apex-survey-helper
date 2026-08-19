@@ -204,6 +204,34 @@ describe('createSurveyV2Engine — navigation', () => {
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'disqualified' }));
   });
 
+  it('drops the draft on disqualification so a return visit starts fresh', async () => {
+    const client = stubClient({
+      composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY),
+      checkQualification: vi.fn().mockResolvedValue({
+        qualified: false,
+        drugResults: [{ drugId: 'drug-A', qualified: false, disqualificationReason: 'Under 18' }],
+      }),
+    });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client, storage,
+    });
+    await tick();
+    engine.setAnswer('q1', 'ans');
+    const draftKeys = () =>
+      [...new Array(storage.length)]
+        .map((_, i) => storage.key(i))
+        .filter((k): k is string => !!k && k.includes('apex:draft'));
+    // The answer was persisted, so its absence below is the clear, not a
+    // draft that was never written.
+    expect(draftKeys()).toHaveLength(1);
+
+    await engine.next();
+
+    expect(engine.getState().phase).toBe('disqualified');
+    expect(draftKeys()).toHaveLength(0);
+  });
+
   it('next() on the last step transitions to patient_info phase', async () => {
     const client = stubClient({
       composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY),
@@ -390,6 +418,120 @@ describe('createSurveyV2Engine — submit answer completeness', () => {
 
     const sent = (submitSurvey.mock.calls[0][0] as any).answers;
     expect(sent).toEqual(expect.arrayContaining([{ questionId: 'mc', value: ['type_2_diabetes'] }]));
+  });
+});
+
+describe('createSurveyV2Engine — funnel events', () => {
+  function qualifiedClient() {
+    return stubClient({
+      composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY),
+      checkQualification: vi.fn().mockResolvedValue({
+        qualified: true,
+        drugResults: [{ drugId: 'drug-A', qualified: true }],
+      }),
+    });
+  }
+
+  it('emits step:shown for the initial step, on advance, and on back', async () => {
+    const onEvent = vi.fn();
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client: qualifiedClient(), storage, onEvent,
+    });
+    await tick();
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'step:shown',
+      data: { stepIndex: 0, stepCount: 2, phase: 'questions' },
+    });
+
+    engine.setAnswer('q1', 'a');
+    await engine.next();
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'step:completed',
+      data: { stepIndex: 0, stepCount: 2 },
+    });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'step:shown',
+      data: { stepIndex: 1, stepCount: 2, phase: 'questions' },
+    });
+
+    onEvent.mockClear();
+    engine.back();
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'step:shown',
+      data: { stepIndex: 0, stepCount: 2, phase: 'questions' },
+    });
+  });
+
+  it('emits qualification:checked on next() and patient_info as the pseudo-step', async () => {
+    const onEvent = vi.fn();
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client: qualifiedClient(), storage, onEvent,
+    });
+    await tick();
+    engine.setAnswer('q1', 'a');
+    await engine.next();
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'qualification:checked',
+      data: expect.objectContaining({ qualified: true }),
+    });
+
+    await engine.next(); // last question step → patient_info
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'step:shown',
+      data: { stepIndex: 2, stepCount: 2, phase: 'patient_info' },
+    });
+  });
+
+  it('emits abandoned on pagehide while in progress, but not after destroy or completion', async () => {
+    const onEvent = vi.fn();
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client: qualifiedClient(), storage, onEvent,
+    });
+    await tick();
+
+    window.dispatchEvent(new Event('pagehide'));
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'abandoned',
+      data: { phase: 'questions', stepIndex: 0, stepCount: 2 },
+    });
+
+    onEvent.mockClear();
+    engine.destroy();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not emit abandoned once the survey is complete', async () => {
+    const onEvent = vi.fn();
+    const submitSurvey = vi.fn().mockResolvedValue({ responseId: 'r1', qualified: true, drugResults: [] });
+    const client = stubClient({
+      composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY),
+      checkQualification: vi.fn().mockResolvedValue({
+        qualified: true,
+        drugResults: [{ drugId: 'drug-A', qualified: true }],
+      }),
+      submitSurvey,
+    });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client, storage, onEvent,
+    });
+    await tick();
+    engine.setAnswer('q1', 'a');
+    await engine.next();
+    await engine.next();
+    engine.setPatientInfo({
+      firstName: 'P', lastName: 'D', email: 'p@d.com', dob: '1990-01-01', state: 'TX',
+    });
+    await engine.submit();
+    expect(engine.getState().phase).toBe('complete');
+
+    onEvent.mockClear();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(onEvent).not.toHaveBeenCalled();
   });
 });
 
@@ -615,5 +757,66 @@ describe('createSurveyV2Engine — skip patient-info when identity complete', ()
     await driveToEnd(engine);
     expect(engine.getState().phase).toBe('patient_info');
     expect(client.submitSurvey).not.toHaveBeenCalled();
+  });
+});
+
+describe('createSurveyV2Engine — pluggable draft store', () => {
+  it('loads from an injected store and writes answers/steps back to it', async () => {
+    const saved: Array<{ answers: unknown[]; stepIndex: number }> = [];
+    const store = {
+      load: vi.fn(async () => ({ answers: [{ questionId: 'q1', value: 'restored' }], stepIndex: 1, savedAt: Date.now() })),
+      save: vi.fn((d: any) => { saved.push(d); }),
+      clear: vi.fn(),
+    };
+    const client = stubClient({ composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY) });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client, storage, draftStore: store,
+    });
+    await tick();
+
+    // Restored from the remote store, not localStorage.
+    expect(store.load).toHaveBeenCalled();
+    expect(engine.getState().answers.q1).toBe('restored');
+    expect(engine.getState().stepIndex).toBe(1);
+
+    engine.setAnswer('q1', 'edited');
+    expect(store.save).toHaveBeenCalled();
+    expect(saved[saved.length - 1].answers).toEqual([{ questionId: 'q1', value: 'edited' }]);
+  });
+
+  it('clears the injected store on a terminal outcome', async () => {
+    const store = { load: vi.fn(async () => null), save: vi.fn(), clear: vi.fn() };
+    const client = stubClient({
+      composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY),
+      checkQualification: vi.fn().mockResolvedValue({
+        qualified: false,
+        drugResults: [{ drugId: 'drug-A', qualified: false }],
+      }),
+    });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client, storage, draftStore: store,
+    });
+    await tick();
+    engine.setAnswer('q1', 'ans');
+    await engine.next();
+
+    expect(engine.getState().phase).toBe('disqualified');
+    expect(store.clear).toHaveBeenCalled();
+  });
+
+  it('defaults to localStorage when no store is injected (unchanged behaviour)', async () => {
+    const client = stubClient({ composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY) });
+    const engine = createSurveyV2Engine({
+      publishableKey: 'pk', apiBaseUrl: 'http://x',
+      drugIds: ['drug-A'], client, storage,
+    });
+    await tick();
+    engine.setAnswer('q1', 'persisted');
+    const keys = Array.from({ length: storage.length }, (_, i) => storage.key(i)!);
+    const draftKeyName = keys.find((k) => k.startsWith('apex:draft:v1'));
+    expect(draftKeyName).toBeTruthy();
+    expect(storage.getItem(draftKeyName!)).toContain('persisted');
   });
 });

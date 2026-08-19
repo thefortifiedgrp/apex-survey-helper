@@ -1,6 +1,6 @@
 import { createEmbedApiClient, EmbedApiError, type EmbedApiClient, type FetchLike } from './api';
 import { flattenComposedSurvey } from './flatten';
-import { clearDraft, draftKey, loadDraft, saveDraft } from './storage';
+import { createLocalDraftStore, draftKey, type DraftStore } from './storage';
 import { isQuestionVisible } from './visibility';
 import type {
   EmbedEvent,
@@ -122,6 +122,15 @@ export interface CreateSurveyV2EngineOptions {
   fetch?: FetchLike;
   storage?: Storage | null;
   draftTtlMs?: number;
+  /**
+   * Where in-progress answers are kept. Defaults to a localStorage store
+   * (device-local resume-on-refresh). Supply one backed by a server to let a
+   * patient resume on a different device — see `DraftStore`.
+   *
+   * Takes precedence over `storage`/`draftTtlMs`, which only configure the
+   * default store.
+   */
+  draftStore?: DraftStore;
 
   /**
    * If true (default), the engine kicks off `load()` immediately when created.
@@ -164,6 +173,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
   });
 
   const storageOpts = { storage: opts.storage, ttlMs: opts.draftTtlMs };
+  const draftStore: DraftStore = opts.draftStore ?? createLocalDraftStore(dKey, storageOpts);
 
   let state: SurveyV2State = {
     phase: 'loading',
@@ -183,6 +193,23 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
 
   const listeners = new Set<() => void>();
   let destroyed = false;
+
+  // `abandoned` fires on pagehide (navigation away / tab close) while the
+  // survey is still in progress. pagehide rather than visibilitychange on
+  // purpose: tabbing away and coming back is not abandonment, and hosts
+  // forward these with fetch keepalive so delivery survives the unload.
+  // May fire more than once per session (bfcache restore, leave again) —
+  // consumers treat it as "last seen leaving", not a terminal state.
+  function onPageHide() {
+    if (state.phase === 'questions' || state.phase === 'patient_info' || state.phase === 'submitting') {
+      emit({
+        type: 'abandoned',
+        data: { phase: state.phase, stepIndex: state.stepIndex, stepCount: state.flatSteps.length },
+      });
+    }
+  }
+  const hasWindow = typeof window !== 'undefined' && typeof window.addEventListener === 'function';
+  if (hasWindow) window.addEventListener('pagehide', onPageHide);
 
   function setState(patch: Partial<SurveyV2State>) {
     state = { ...state, ...patch };
@@ -252,11 +279,10 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
   }
 
   function persistDraft(overrideStepIndex?: number) {
-    saveDraft(
-      dKey,
-      { answers: answersArr(), stepIndex: overrideStepIndex ?? state.stepIndex },
-      storageOpts,
-    );
+    draftStore.save({
+      answers: answersArr(),
+      stepIndex: overrideStepIndex ?? state.stepIndex,
+    });
   }
 
   function currentStep(): FlatStep | null {
@@ -349,7 +375,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
       const flatSteps = flattenComposedSurvey(composed);
 
       // Restore draft if present.
-      const draft = loadDraft(dKey, storageOpts);
+      const draft = await draftStore.load();
       let answers: Record<string, unknown> = {};
       let stepIndex = 0;
       if (draft) {
@@ -369,6 +395,10 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         memberId,
       });
       emit({ type: 'survey:loaded', data: { resumed: !!draft } });
+      emit({
+        type: 'step:shown',
+        data: { stepIndex, stepCount: flatSteps.length, phase: 'questions' },
+      });
     } catch (err) {
       const msg = formatError(err);
       setState({ phase: 'error', error: msg });
@@ -404,6 +434,10 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
     if (prev !== -1) {
       setState({ stepIndex: prev });
       persistDraft(prev);
+      emit({
+        type: 'step:shown',
+        data: { stepIndex: prev, stepCount: state.flatSteps.length, phase: 'questions' },
+      });
     }
   }
 
@@ -424,9 +458,18 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         answers: answersArr(),
       });
       if (destroyed) return;
+      emit({
+        type: 'qualification:checked',
+        data: { qualified: result.qualified, drugResults: result.drugResults },
+      });
       const allDisqualified =
         result.drugResults.length > 0 && result.drugResults.every((d) => !d.qualified);
       if (allDisqualified) {
+        // Terminal, so the draft goes — same as a successful submit below.
+        // Keeping it means a member who leaves and comes back resumes on the
+        // denying answers and is denied again the moment they hit Continue,
+        // with no way out but "Start over". They should get a fresh survey.
+        draftStore.clear();
         setState({
           phase: 'disqualified',
           qualification: result,
@@ -436,7 +479,10 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         emit({ type: 'disqualified', data: { drugResults: result.drugResults } });
         return;
       }
+      const completedIdx = state.stepIndex;
+      const stepCount = state.flatSteps.length;
       const nextIdx = nextVisibleStepIndex(state.stepIndex);
+      emit({ type: 'step:completed', data: { stepIndex: completedIdx, stepCount } });
       if (nextIdx === -1) {
         // No further step has visible questions. Normally we render the
         // patient-info form. But a returning/known customer with complete
@@ -445,6 +491,8 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         // and the completeness guard passes. Set phase:'patient_info' first so
         // submit()'s own guard is satisfied (we do NOT relax that guard).
         setState({ phase: 'patient_info', qualification: result, busy: false });
+        // The patient-info form is the pseudo-step past the last question step.
+        emit({ type: 'step:shown', data: { stepIndex: stepCount, stepCount, phase: 'patient_info' } });
         const partnerVetoed =
           (state.composed?.surveyPreferences as { skipPatientInfoWhenComplete?: boolean } | undefined)
             ?.skipPatientInfoWhenComplete === false;
@@ -466,6 +514,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
       } else {
         setState({ stepIndex: nextIdx, qualification: result, busy: false });
         persistDraft(nextIdx);
+        emit({ type: 'step:shown', data: { stepIndex: nextIdx, stepCount, phase: 'questions' } });
       }
     } catch (err) {
       const msg = formatError(err);
@@ -497,7 +546,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
         patientInfo: pi,
       });
       if (destroyed) return;
-      clearDraft(dKey, storageOpts);
+      draftStore.clear();
       setState({ phase: 'complete', result });
       emit({ type: 'submit:succeeded', data: { responseId: result.responseId } });
       if (opts.onComplete) {
@@ -522,7 +571,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
   }
 
   function restart() {
-    clearDraft(dKey, storageOpts);
+    draftStore.clear();
     setState({
       phase: 'questions',
       stepIndex: 0,
@@ -537,6 +586,7 @@ export function createSurveyV2Engine(opts: CreateSurveyV2EngineOptions): SurveyV
   function destroy() {
     destroyed = true;
     listeners.clear();
+    if (hasWindow) window.removeEventListener('pagehide', onPageHide);
   }
 
   // ── Subscription ──────────────────────────────────────────────────────────
