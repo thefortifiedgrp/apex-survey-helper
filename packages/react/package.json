@@ -48,7 +48,8 @@
     "@apextelemed/survey-core": "*"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "engines": {
     "node": ">=18"
