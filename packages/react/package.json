@@ -1,8 +1,17 @@
 {
   "name": "@apextelemed/survey-react",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "React hook for the Apex Telemed survey-v2 embed flow.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thefortifiedgrp/apex-survey-helper.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/thefortifiedgrp/apex-survey-helper/tree/main/packages/react#readme",
+  "bugs": {
+    "url": "https://github.com/thefortifiedgrp/apex-survey-helper/issues"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.cjs",
@@ -17,7 +26,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
@@ -31,7 +41,7 @@
     "telehealth"
   ],
   "peerDependencies": {
-    "@apextelemed/survey-core": ">=0.0.0",
+    "@apextelemed/survey-core": "^0.1.0",
     "react": ">=18"
   },
   "devDependencies": {
