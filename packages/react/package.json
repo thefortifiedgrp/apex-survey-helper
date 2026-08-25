@@ -1,6 +1,6 @@
 {
   "name": "@apextelemed/survey-react",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "React hook for the Apex Telemed survey-v2 embed flow.",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
