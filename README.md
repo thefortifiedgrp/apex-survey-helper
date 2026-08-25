@@ -49,3 +49,12 @@ npm run typecheck
 Releases are managed with [changesets](https://github.com/changesets/changesets):
 `npm run changeset` to record a version bump, then the release workflow runs
 `changeset publish`.
+
+## License
+
+Source-available under the Apex Telemed Platform Integration License — see
+[`LICENSE`](./LICENSE). Use, modify, and redistribute freely, but only to
+build and operate software that integrates with Apex Telemed's platform on
+behalf of an Apex Telemed customer. Not an open source license; there is no
+conversion to one. Versions `0.1.0` and earlier were published under MIT and
+stay MIT.
