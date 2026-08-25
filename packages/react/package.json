@@ -41,7 +41,7 @@
     "telehealth"
   ],
   "peerDependencies": {
-    "@apextelemed/survey-core": "^0.1.0",
+    "@apextelemed/survey-core": ">=0.1.0 <1.0.0",
     "react": ">=18"
   },
   "devDependencies": {
