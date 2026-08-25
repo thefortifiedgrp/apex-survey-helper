@@ -9,6 +9,8 @@ concurrency: release-${{ github.ref }}
 permissions:
   contents: write
   pull-requests: write
+  # Lets the job mint the OIDC token npm exchanges for a short-lived publish
+  # credential. Without this, trusted publishing can't authenticate.
   id-token: write
 
 jobs:
@@ -18,31 +20,29 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Trusted publishing needs npm >= 11.5.1, which Node 22 does not ship
+          # (it carries npm 10.9.x). Node 24 plus an explicit upgrade keeps the
+          # npm version deterministic rather than tied to whatever the runner
+          # image happens to bundle.
+          node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm run build
 
-      # Gate the release step on an npm token being configured. Without it,
-      # `changeset publish` fails with ENEEDAUTH; skipping keeps main green until
-      # the NPM_TOKEN secret is added (at which point releases resume automatically).
-      - name: Check for npm token
-        id: npm_token
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -n "$NPM_TOKEN" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::NPM_TOKEN not set — skipping changesets version/publish step."
-          fi
-
       # Opens/updates a "Version Packages" PR when changesets are present;
       # when that PR is merged, publishes the three packages to npm.
+      #
+      # Auth is npm trusted publishing (OIDC) — no NPM_TOKEN. The publisher is
+      # configured per package on npmjs.com and matched on this workflow's
+      # filename (`release.yml`), so renaming this file breaks publishing until
+      # the trusted publisher config is updated to match.
+      #
+      # Deliberately no token fallback: npm prefers an NPM_TOKEN/NODE_AUTH_TOKEN
+      # when one is present and never attempts the OIDC exchange, so leaving one
+      # configured would silently mean trusted publishing is never exercised.
       - name: Create release PR or publish
-        if: steps.npm_token.outputs.present == 'true'
         uses: changesets/action@v1
         with:
           version: npm run version-packages
@@ -51,5 +51,3 @@ jobs:
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

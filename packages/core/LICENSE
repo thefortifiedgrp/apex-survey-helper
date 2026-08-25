@@ -1,21 +1,65 @@
-MIT License
+Apex Telemed Platform Integration License
+Version 1.0, August 2026
 
-Copyright (c) 2026 Apex Telemed
+Copyright (c) 2026 Apex Telemed ("Licensor")
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This license applies to the software packages @apextelemed/survey-core,
+@apextelemed/survey-solid, and @apextelemed/survey-react, and to their source
+code, documentation, and any modified or derivative versions
+(together, the "Software").
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This is not an open source license. It permits use of the Software only for
+the purpose described below.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+1. Permitted Purpose
+
+   "Permitted Purpose" means building, deploying, and operating a website,
+   application, or service that (a) integrates with the telehealth platform
+   and backend services operated by Licensor, through the interfaces Licensor
+   makes available to its customers for that purpose, and (b) is operated by,
+   or on behalf of, a current customer of Licensor for that customer's own
+   business.
+
+2. Grant
+
+   Subject to the terms of this license, Licensor grants you a worldwide,
+   royalty-free, non-exclusive, non-transferable license to use, copy, modify,
+   create derivative works of, and distribute the Software, in source or
+   compiled form, solely for the Permitted Purpose.
+
+3. Restrictions
+
+   Any use of the Software outside the Permitted Purpose is not licensed.
+   Without limiting that, you may not use the Software, or any part or
+   derivative of it, with any platform or backend service other than
+   Licensor's, or to build a product that competes with Licensor's platform.
+   Any such use requires a separate written license from Licensor.
+
+4. Redistribution
+
+   Any copy of the Software, modified or unmodified, that you distribute must
+   include this license and retain all copyright, license, and attribution
+   notices present in the Software. If you receive the Software from a third
+   party, this license governs your use of it.
+
+5. Termination
+
+   This license terminates automatically if you breach it. Upon termination
+   you must stop using and distributing the Software. Sections 6 and 7
+   survive termination.
+
+6. Trademarks
+
+   This license does not grant any right to use the names, trademarks, or
+   logos of Licensor or its affiliates, except as required to reproduce the
+   notices in Section 4.
+
+7. Disclaimer
+
+   TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS
+   IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WITHOUT
+   LIMITATION WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+   PURPOSE, NON-INFRINGEMENT, AND TITLE. IN NO EVENT WILL LICENSOR BE LIABLE
+   FOR ANY DAMAGES ARISING FROM THE USE OF THE SOFTWARE.
+
+For any other licensing arrangement, contact Apex Telemed.
