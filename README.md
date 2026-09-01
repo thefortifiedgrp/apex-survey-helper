@@ -13,20 +13,31 @@ the markup.
 | [`@apextelemed/survey-react`](./packages/react) | React hook (`useSurveyV2Flow`) over the core. | `npm i @apextelemed/survey-core @apextelemed/survey-react` |
 | [`@apextelemed/survey-solid`](./packages/solid) | Solid hook (`useSurveyV2Flow`) over the core. | `npm i @apextelemed/survey-core @apextelemed/survey-solid` |
 
-No framework? Drive `@apextelemed/survey-core` directly — see
-[docs/partners/headless.md](./docs/partners/headless.md).
+No framework? Drive `@apextelemed/survey-core` directly — see the
+[headless core guide](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/headless/).
 
 ## Documentation
 
-Start at [**docs/partners/getting-started.md**](./docs/partners/getting-started.md).
+Full documentation lives on the Apex Telemed developer docs site, alongside the
+Partner API and partner-core docs:
 
-- [Getting started](./docs/partners/getting-started.md)
-- [Authentication & integration modes](./docs/partners/auth-and-modes.md)
-- [React adapter](./docs/partners/react.md)
-- [Solid adapter](./docs/partners/solid.md)
-- [Headless / no framework](./docs/partners/headless.md)
-- [API contract](./docs/partners/api-contract.md)
-- [Theming](./docs/partners/theming.md)
+**https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/**
+
+- [Getting started](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/)
+- [Authentication and modes](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/auth-and-modes/)
+- [React adapter](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/react/)
+- [Solid adapter](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/solid/)
+- [Headless core](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/headless/)
+- [Theming](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/theming/)
+- [API contract](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/api-contract/)
+
+The HTTP API the SDK calls is documented under
+[Survey v2: embed API](https://thefortifiedgrp.github.io/apex-devdocs/api/survey-v2-embed/) and
+[Survey v2: server-side API](https://thefortifiedgrp.github.io/apex-devdocs/api/survey-v2-server/).
+
+The docs source is the public
+[apex-devdocs](https://github.com/thefortifiedgrp/apex-devdocs) repo; open
+documentation PRs there.
 
 ## Examples
 

@@ -64,6 +64,6 @@ export function Survey() {
 > The engine is constructed once when the component mounts. To restart with
 > different options, remount the component (e.g. change its React `key`).
 
-See the [React adapter docs](https://github.com/apextelemed/apex-survey-helper/blob/main/docs/partners/react.md)
+See the [React adapter docs](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/react/)
 for the full `SurveyV2Flow` shape and the
-[runnable example](https://github.com/apextelemed/apex-survey-helper/tree/main/examples/react-vite).
+[runnable example](https://github.com/thefortifiedgrp/apex-survey-helper/tree/main/examples/react-vite).
