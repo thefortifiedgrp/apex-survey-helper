@@ -51,6 +51,6 @@ export function Survey() {
 > The engine is constructed once when the hook runs. To restart with different
 > options, re-create the owning component.
 
-See the [Solid adapter docs](https://github.com/apextelemed/apex-survey-helper/blob/main/docs/partners/solid.md)
+See the [Solid adapter docs](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/solid/)
 for the full `SurveyV2Flow` shape and the
-[runnable example](https://github.com/apextelemed/apex-survey-helper/tree/main/examples/solid-vite).
+[runnable example](https://github.com/thefortifiedgrp/apex-survey-helper/tree/main/examples/solid-vite).

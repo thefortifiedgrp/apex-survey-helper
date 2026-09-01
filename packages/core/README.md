@@ -30,10 +30,10 @@ The engine walks a survey through these phases: `loading → questions →
 patient_info → submitting → complete` (or `disqualified` / `error`). It
 persists a draft to `localStorage` so a refresh resumes mid-flow.
 
-See the [full docs](https://github.com/apextelemed/apex-survey-helper/tree/main/docs/partners)
-— [headless guide](https://github.com/apextelemed/apex-survey-helper/blob/main/docs/partners/headless.md),
-[auth & modes](https://github.com/apextelemed/apex-survey-helper/blob/main/docs/partners/auth-and-modes.md),
-[API contract](https://github.com/apextelemed/apex-survey-helper/blob/main/docs/partners/api-contract.md).
+See the [full docs](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/)
+— [headless guide](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/headless/),
+[auth & modes](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/auth-and-modes/),
+[API contract](https://thefortifiedgrp.github.io/apex-devdocs/survey-helper/api-contract/).
 
 ## API surface
 
