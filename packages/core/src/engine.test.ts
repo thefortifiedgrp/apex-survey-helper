@@ -806,7 +806,7 @@ describe('createSurveyV2Engine — pluggable draft store', () => {
     expect(store.clear).toHaveBeenCalled();
   });
 
-  it('defaults to localStorage when no store is injected (unchanged behaviour)', async () => {
+  it('defaults to localStorage when no store is injected (unchanged behavior)', async () => {
     const client = stubClient({ composeSurvey: vi.fn().mockResolvedValue(TINY_SURVEY) });
     const engine = createSurveyV2Engine({
       publishableKey: 'pk', apiBaseUrl: 'http://x',
