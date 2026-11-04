@@ -138,7 +138,7 @@ export interface DraftStore {
 
 /**
  * The default store: `localStorage`, keyed by the survey identity, with the
- * same TTL semantics the engine has always had. Behaviour is unchanged from
+ * same TTL semantics the engine has always had. Behavior is unchanged from
  * when these functions were called directly.
  */
 export function createLocalDraftStore(key: string, opts: StorageOptions = {}): DraftStore {
