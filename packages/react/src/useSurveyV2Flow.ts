@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   createSurveyV2Engine,
   isQuestionVisible,
@@ -99,7 +99,10 @@ export interface SurveyV2Flow {
   submit: () => Promise<void>;
   restart: () => void;
 
-  /** Underlying engine — exposed for advanced use cases / tests. */
+  /** Underlying engine — exposed for advanced use cases / tests. Before the
+   *  mount effect has run (the first render, and server rendering) this is an
+   *  inert placeholder that reads as "loading"; don't hold on to it across
+   *  renders. */
   engine: SurveyV2Engine;
 }
 
@@ -124,12 +127,53 @@ function deriveOutcome(state: SurveyV2State): SurveyV2Outcome {
 
 // ── Hook ────────────────────────────────────────────────────────────────────
 
+const NOT_STARTED: SurveyV2State = {
+  phase: 'loading',
+  composed: null,
+  flatSteps: [],
+  stepIndex: 0,
+  answers: {},
+  patientInfo: {},
+  memberId: null,
+  qualification: null,
+  result: null,
+  disqualifiedResult: null,
+  validationError: null,
+  busy: false,
+  error: null,
+};
+
+/**
+ * Stands in for the engine until the mount effect has built the real one, so
+ * `flow.engine` is never null. It reads as "loading" and its actions do
+ * nothing; nothing can call them in practice, since the survey has no
+ * questions to answer before the real engine loads.
+ */
+const PENDING_ENGINE: SurveyV2Engine = {
+  getState: () => NOT_STARTED,
+  subscribe: () => () => {},
+  setAnswer: () => {},
+  setPatientInfo: () => {},
+  next: async () => {},
+  back: () => {},
+  submit: async () => {},
+  restart: () => {},
+  destroy: () => {},
+};
+
 /**
  * React adapter over the headless survey-v2 engine. The engine is constructed
  * once on mount from the options passed at that time — like the Solid adapter,
  * later changes to `opts` are NOT re-applied (re-mount the component, e.g. with
  * a `key`, to start a fresh survey). State is mirrored into React via
  * `useSyncExternalStore`, which re-reads the snapshot when the engine notifies.
+ *
+ * The engine is created inside the mount effect and destroyed by that same
+ * effect's cleanup, never during render. Creating an engine starts its load,
+ * so building it in render breaks React StrictMode: development mounts, cleans
+ * up and remounts every effect, and a render-built engine is destroyed by the
+ * first cleanup and never replaced, leaving the survey on "loading" forever.
+ * Until the effect runs, `state` is a static "loading" snapshot.
  */
 export function useSurveyV2Flow(opts: UseSurveyV2FlowOptions): SurveyV2Flow {
   // Keep the latest callbacks in a ref so the engine (built once) always calls
@@ -137,39 +181,39 @@ export function useSurveyV2Flow(opts: UseSurveyV2FlowOptions): SurveyV2Flow {
   const handlers = useRef({ onEvent: opts.onEvent, onComplete: opts.onComplete, onError: opts.onError });
   handlers.current = { onEvent: opts.onEvent, onComplete: opts.onComplete, onError: opts.onError };
 
-  const engineRef = useRef<SurveyV2Engine | null>(null);
-  if (engineRef.current === null) {
+  // Options are read once per mount (see above), so pin the first render's.
+  const initialOpts = useRef(opts);
+
+  const [engine, setEngine] = useState<SurveyV2Engine | null>(null);
+
+  useEffect(() => {
+    const o = initialOpts.current;
     const engineOpts: CreateSurveyV2EngineOptions = {
-      apiBaseUrl: opts.apiBaseUrl,
-      publishableKey: opts.publishableKey,
-      tenantKey: opts.tenantKey,
-      drugIds: opts.drugIds,
-      templateId: opts.templateId,
-      mode: opts.mode,
-      token: opts.token,
-      skipPatientInfoWhenComplete: opts.skipPatientInfoWhenComplete,
-      knownPatientInfo: opts.knownPatientInfo,
-      requiredPatientInfoFields: opts.requiredPatientInfoFields,
-      draftTtlMs: opts.draftTtlMs,
+      apiBaseUrl: o.apiBaseUrl,
+      publishableKey: o.publishableKey,
+      tenantKey: o.tenantKey,
+      drugIds: o.drugIds,
+      templateId: o.templateId,
+      mode: o.mode,
+      token: o.token,
+      skipPatientInfoWhenComplete: o.skipPatientInfoWhenComplete,
+      knownPatientInfo: o.knownPatientInfo,
+      requiredPatientInfoFields: o.requiredPatientInfoFields,
+      draftTtlMs: o.draftTtlMs,
       onEvent: (e) => handlers.current.onEvent?.(e),
       onComplete: (r) => handlers.current.onComplete?.(r),
       onError: (err) => handlers.current.onError?.(err),
     };
-    engineRef.current = createSurveyV2Engine(engineOpts);
-  }
-  const engine = engineRef.current;
-
-  // Tear down on unmount.
-  useEffect(() => {
+    const created = createSurveyV2Engine(engineOpts);
+    setEngine(created);
     return () => {
-      engine.destroy();
-      engineRef.current = null;
+      created.destroy();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const subscribe = useCallback((onChange: () => void) => engine.subscribe(onChange), [engine]);
-  const getSnapshot = useCallback(() => engine.getState(), [engine]);
+  const live = engine ?? PENDING_ENGINE;
+  const subscribe = useCallback((onChange: () => void) => live.subscribe(onChange), [live]);
+  const getSnapshot = useCallback(() => live.getState(), [live]);
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const currentStep = state.flatSteps[state.stepIndex] ?? null;
@@ -187,15 +231,15 @@ export function useSurveyV2Flow(opts: UseSurveyV2FlowOptions): SurveyV2Flow {
     currentStep,
     visibleQuestions,
     answers: state.answers,
-    setAnswer: (qid, value) => engine.setAnswer(qid, value),
+    setAnswer: (qid, value) => live.setAnswer(qid, value),
     patientInfo: state.patientInfo,
-    setPatientInfo: (patch) => engine.setPatientInfo(patch),
+    setPatientInfo: (patch) => live.setPatientInfo(patch),
     submitting: state.busy,
     validationError: state.validationError,
-    next: () => engine.next(),
-    back: () => engine.back(),
-    submit: () => engine.submit(),
-    restart: () => engine.restart(),
-    engine,
+    next: () => live.next(),
+    back: () => live.back(),
+    submit: () => live.submit(),
+    restart: () => live.restart(),
+    engine: live,
   };
 }
